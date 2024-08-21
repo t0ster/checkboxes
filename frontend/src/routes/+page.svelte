@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { BinaryPacker } from './lib';
+	import config from '$lib/config-public';
 
 	const SIZE = 10000;
 	const COLS = 100;
@@ -8,7 +9,7 @@
 	let socket: WebSocket;
 
 	function connectWebSocket() {
-		socket = new WebSocket('ws://localhost:8000/checkboxes');
+		socket = new WebSocket(config.PUBLIC_API_WS);
 		socket.binaryType = 'arraybuffer';
 
 		socket.onclose = () => {

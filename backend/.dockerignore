@@ -1,0 +1,25 @@
+# flyctl launch added from .gitignore
+**/__pycache__
+**/*.py[cod]
+
+# Logs
+**/*.log
+
+# Build
+**/build
+**/dist
+**/*.egg-info
+
+# Temporary files
+**/*.tmp
+**/*.bak
+**/*.swp
+
+# OS generated files
+**/.DS_Store
+**/Thumbs.db
+
+# flyctl launch added from lib/.gitignore
+lib/**/*.c
+lib/**/*.so
+fly.toml
