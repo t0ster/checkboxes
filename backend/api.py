@@ -1,22 +1,19 @@
 import asyncio
+import os
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
-from uuid import uuid4
+from logging import getLogger
 
-from anyio import create_memory_object_stream, create_task_group
+from anyio import create_task_group
 from bitarray import bitarray
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from lib.binary_packer import BinaryPacker
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    asyncio.create_task(send_to_all())
-    yield
+logger = getLogger(__name__)
 
 
-api = FastAPI(lifespan=lifespan)
+api = FastAPI()
 
 api.add_middleware(
     CORSMiddleware,
@@ -38,22 +35,56 @@ CHECKBOXES = bitarray(10000)
 SUBSCRIBERS = set()
 
 
-# THREAD_POOL = ThreadPoolExecutor()
+def not_none(x):
+    assert x is not None
+    return x
 
-send_stream, receive_stream = create_memory_object_stream()
+
+THREAD_POOL = ThreadPoolExecutor(max_workers=not_none(os.cpu_count()) + 1)
 
 
-async def send_to_all():
-    while True:
-        msg = await receive_stream.receive()
+async def broadcast_update(initiator: WebSocket):
+    disconnected = set()
+
+    async def send_to_subscriber(websocket):
+        if websocket != initiator:
+            try:
+                await websocket.send_bytes(CHECKBOXES.tobytes())
+            except WebSocketDisconnect:
+                disconnected.add(websocket)
+            except Exception:
+                logger.exception("Error sending to subscriber")
+                disconnected.add(websocket)
+
+    async with create_task_group() as tg:
         for websocket in SUBSCRIBERS:
-            if websocket != msg["initiator"]:
-                try:
-                    await websocket.send_bytes(msg["data"])
-                except WebSocketDisconnect:
-                    SUBSCRIBERS.remove(websocket)
-                    # print("Removed", websocket)
-                    return await send_to_all()
+            tg.start_soon(send_to_subscriber, websocket)
+
+    SUBSCRIBERS.difference_update(disconnected)
+
+
+BATCH_INTERVAL = 0.1  # 100ms
+PENDING_UPDATES = deque()
+
+
+async def process_batched_updates():
+    global PENDING_UPDATES
+    while True:
+        await asyncio.sleep(BATCH_INTERVAL)
+        if PENDING_UPDATES:
+            updates = PENDING_UPDATES
+            PENDING_UPDATES = deque()
+            grouped_updates = {}
+            while updates:
+                websocket, index, value = updates.popleft()
+                if websocket not in grouped_updates:
+                    grouped_updates[websocket] = []
+                grouped_updates[websocket].append((index, value))
+
+            for websocket, batch in grouped_updates.items():
+                for index, value in batch:
+                    CHECKBOXES[index] = value
+                await broadcast_update(initiator=websocket)
 
 
 @api.websocket("/checkboxes")
@@ -65,15 +96,19 @@ async def checkboxes_ws(websocket: WebSocket):
         await websocket.send_bytes(CHECKBOXES.tobytes())
         while True:
             message = await websocket.receive_bytes()
-            # d = await asyncio.get_event_loop().run_in_executor(
-            #     THREAD_POOL, BinaryPacker.unpack, message
-            # )
-            d = BinaryPacker.unpack(message)
+            d = await asyncio.get_event_loop().run_in_executor(
+                THREAD_POOL, BinaryPacker.unpack, message
+            )
             index = d["number"]
             value = d["bit1"]
-            CHECKBOXES[index] = value
-            await send_stream.send(
-                {"initiator": websocket, "data": CHECKBOXES.tobytes()}
-            )
+            PENDING_UPDATES.append((websocket, index, value))
     except WebSocketDisconnect:
         pass
+    finally:
+        SUBSCRIBERS.discard(websocket)
+
+
+# Start the batching task when the app starts
+@api.on_event("startup")
+async def startup_event():
+    asyncio.create_task(process_batched_updates())

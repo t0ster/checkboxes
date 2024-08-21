@@ -4,12 +4,11 @@
 
 	const SIZE = 10000;
 	const COLS = 100;
-	const UPDATE_FREQUENCY = 50;
 
 	let checkboxes = $state(Array(SIZE).fill(false));
 	let socket: WebSocket;
-	let lastUpdateTime = 0;
-	let pendingUpdate: MessageEvent | null = null;
+	let updateQueue: MessageEvent[] = [];
+	let isProcessing = false;
 
 	function processMessage(event: MessageEvent) {
 		const buffer = event.data as ArrayBuffer;
@@ -25,6 +24,20 @@
 		}
 	}
 
+	function processQueue() {
+		if (updateQueue.length > 0) {
+			// Process only the last message
+			const lastMessage = updateQueue[updateQueue.length - 1];
+			processMessage(lastMessage);
+			updateQueue = []; // Clear the queue after processing
+
+			// Schedule next check
+			setTimeout(processQueue, 16); // Limit updates to max ~60 times per second
+		} else {
+			isProcessing = false;
+		}
+	}
+
 	function connectWebSocket() {
 		socket = new WebSocket(config.PUBLIC_API_WS);
 		socket.binaryType = 'arraybuffer';
@@ -35,18 +48,10 @@
 		};
 
 		socket.onmessage = (event: MessageEvent) => {
-			const currentTime = Date.now();
-			if (currentTime - lastUpdateTime < UPDATE_FREQUENCY) {
-				// Store this message as pending
-				pendingUpdate = event;
-				if (!lastUpdateTime) {
-					// If this is the first message, schedule an update
-					setTimeout(checkPendingUpdate, UPDATE_FREQUENCY);
-				}
-			} else {
-				// Process the message immediately
-				processMessage(event);
-				lastUpdateTime = currentTime;
+			updateQueue.push(event);
+			if (!isProcessing) {
+				isProcessing = true;
+				setTimeout(processQueue, 0);
 			}
 		};
 
@@ -56,19 +61,6 @@
 	$effect(() => {
 		connectWebSocket();
 	});
-
-	function checkPendingUpdate() {
-		const currentTime = Date.now();
-		if (pendingUpdate && currentTime - lastUpdateTime >= UPDATE_FREQUENCY) {
-			processMessage(pendingUpdate);
-			lastUpdateTime = currentTime;
-			pendingUpdate = null;
-		}
-		if (pendingUpdate) {
-			// If there's still a pending update, check again after the remaining time
-			setTimeout(checkPendingUpdate, UPDATE_FREQUENCY - (currentTime - lastUpdateTime));
-		}
-	}
 
 	function onChange(index: number) {
 		const packed = BinaryPacker.pack(index, checkboxes[index]);
