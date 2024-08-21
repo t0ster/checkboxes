@@ -1,14 +1,22 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from anyio import create_task_group
+from anyio import create_memory_object_stream, create_task_group
 from bitarray import bitarray
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from lib.binary_packer import BinaryPacker
 
-api = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(send_to_all())
+    yield
+
+
+api = FastAPI(lifespan=lifespan)
 
 api.add_middleware(
     CORSMiddleware,
@@ -27,25 +35,31 @@ async def home():
 
 
 CHECKBOXES = bitarray(10000)
-SUBSCRIBERS = {}
+SUBSCRIBERS = set()
 
 
 # THREAD_POOL = ThreadPoolExecutor()
+
+send_stream, receive_stream = create_memory_object_stream()
+
+
+async def send_to_all():
+    while True:
+        msg = await receive_stream.receive()
+        for websocket in SUBSCRIBERS:
+            if websocket != msg["initiator"]:
+                try:
+                    await websocket.send_bytes(msg["data"])
+                except WebSocketDisconnect:
+                    SUBSCRIBERS.remove(websocket)
+                    # print("Removed", websocket)
+                    return await send_to_all()
 
 
 @api.websocket("/checkboxes")
 async def checkboxes_ws(websocket: WebSocket):
     await websocket.accept()
-    client_id = uuid4()
-
-    async def callback(client_id, data: bytes):
-        # print("Sending to", client_id)
-        try:
-            await websocket.send_bytes(data)
-        except WebSocketDisconnect:
-            SUBSCRIBERS.pop(client_id, None)
-
-    SUBSCRIBERS[client_id] = callback
+    SUBSCRIBERS.add(websocket)
 
     try:
         await websocket.send_bytes(CHECKBOXES.tobytes())
@@ -58,14 +72,8 @@ async def checkboxes_ws(websocket: WebSocket):
             index = d["number"]
             value = d["bit1"]
             CHECKBOXES[index] = value
-            # for cid, callback in SUBSCRIBERS.items():
-            #     if cid != client_id:
-            #         await callback(CHECKBOXES.tobytes())
-            async with create_task_group() as tg:
-                for cid, callback in SUBSCRIBERS.items():
-                    if cid != client_id:
-                        tg.start_soon(callback, client_id, CHECKBOXES.tobytes())
+            await send_stream.send(
+                {"initiator": websocket, "data": CHECKBOXES.tobytes()}
+            )
     except WebSocketDisconnect:
         pass
-    finally:
-        SUBSCRIBERS.pop(client_id, None)
