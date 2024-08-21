@@ -42,27 +42,6 @@ def not_none(x):
 
 THREAD_POOL = ThreadPoolExecutor(max_workers=not_none(os.cpu_count()) + 1)
 
-
-async def broadcast_update(initiator: WebSocket):
-    disconnected = set()
-
-    async def send_to_subscriber(websocket):
-        if websocket != initiator:
-            try:
-                await websocket.send_bytes(CHECKBOXES.tobytes())
-            except WebSocketDisconnect:
-                disconnected.add(websocket)
-            except Exception:
-                logger.exception("Error sending to subscriber")
-                disconnected.add(websocket)
-
-    async with create_task_group() as tg:
-        for websocket in SUBSCRIBERS:
-            tg.start_soon(send_to_subscriber, websocket)
-
-    SUBSCRIBERS.difference_update(disconnected)
-
-
 BATCH_INTERVAL = 0.1  # 100ms
 PENDING_UPDATES = deque()
 
@@ -74,17 +53,32 @@ async def process_batched_updates():
         if PENDING_UPDATES:
             updates = PENDING_UPDATES
             PENDING_UPDATES = deque()
-            grouped_updates = {}
-            while updates:
-                websocket, index, value = updates.popleft()
-                if websocket not in grouped_updates:
-                    grouped_updates[websocket] = []
-                grouped_updates[websocket].append((index, value))
 
-            for websocket, batch in grouped_updates.items():
-                for index, value in batch:
-                    CHECKBOXES[index] = value
-                await broadcast_update(initiator=websocket)
+            # Apply all updates to CHECKBOXES
+            for index, value in updates:
+                CHECKBOXES[index] = value
+
+            # Broadcast to all clients
+            await broadcast_update()
+
+
+async def broadcast_update():
+    disconnected = set()
+
+    async def send_to_subscriber(websocket):
+        try:
+            await websocket.send_bytes(CHECKBOXES.tobytes())
+        except WebSocketDisconnect:
+            disconnected.add(websocket)
+        except Exception:
+            logger.exception("Error sending to subscriber")
+            disconnected.add(websocket)
+
+    async with create_task_group() as tg:
+        for websocket in SUBSCRIBERS:
+            tg.start_soon(send_to_subscriber, websocket)
+
+    SUBSCRIBERS.difference_update(disconnected)
 
 
 @api.websocket("/checkboxes")
@@ -101,7 +95,7 @@ async def checkboxes_ws(websocket: WebSocket):
             )
             index = d["number"]
             value = d["bit1"]
-            PENDING_UPDATES.append((websocket, index, value))
+            PENDING_UPDATES.append((index, value))
     except WebSocketDisconnect:
         pass
     finally:
