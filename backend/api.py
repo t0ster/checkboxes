@@ -31,19 +31,16 @@ async def home():
     return {"message": "Hello World"}
 
 
-CHECKBOXES = bitarray(10000)
-SUBSCRIBERS = set()
-
-
 def not_none(x):
     assert x is not None
     return x
 
 
 THREAD_POOL = ThreadPoolExecutor(max_workers=not_none(os.cpu_count()) + 1)
-
-BATCH_INTERVAL = 0.1  # 100ms
+CHECKBOXES = bitarray(10000)
+SUBSCRIBERS = set()
 PENDING_UPDATES = deque()
+BATCH_INTERVAL = 0.1  # 100ms
 
 
 async def process_batched_updates():
