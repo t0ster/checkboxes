@@ -15,6 +15,9 @@
 	let socket: WebSocket;
 	let updateQueue: MessageEvent[] = [];
 	let isProcessing = false;
+	let isDrawing = false;
+	let lastCellIndex = -1;
+	let initialCellState = 0;
 
 	$effect(() => {
 		cellCtx = cellCanvas.getContext('2d')!;
@@ -106,27 +109,55 @@
 		// TODO: receive diffs
 	}
 
-	function onClick(event: MouseEvent) {
+	function startDrawing(event: MouseEvent) {
+		isDrawing = true;
+		const index = getCellIndex(event);
+		initialCellState = cells[index];
+		draw(event);
+	}
+
+	function stopDrawing() {
+		isDrawing = false;
+		lastCellIndex = -1;
+	}
+
+	function getCellIndex(event: MouseEvent): number {
 		const rect = cellCanvas.getBoundingClientRect();
 		const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
 		const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
-		const index = y * COLS + x;
+		return y * COLS + x;
+	}
 
-		if (index >= 0 && index < SIZE) {
-			cells[index] = cells[index] ? 0 : 1;
-			drawCell(index);
+	function draw(event: MouseEvent) {
+		if (!isDrawing) return;
 
-			const packed = BinaryPacker.pack(index, !!cells[index]);
-			if (socket.readyState === WebSocket.OPEN) {
-				socket.send(packed);
-			} else {
-				console.log('WebSocket connection not open. Cannot send message.');
+		const index = getCellIndex(event);
+
+		if (index >= 0 && index < SIZE && index !== lastCellIndex) {
+			if (cells[index] === initialCellState) {
+				cells[index] = initialCellState ? 0 : 1;
+				drawCell(index);
+
+				const packed = BinaryPacker.pack(index, !!cells[index]);
+				if (socket.readyState === WebSocket.OPEN) {
+					socket.send(packed);
+				} else {
+					console.log('WebSocket connection not open. Cannot send message.');
+				}
 			}
+			lastCellIndex = index;
 		}
 	}
 </script>
 
 <div class="relative flex h-screen items-center justify-center">
-	<canvas bind:this={cellCanvas} onclick={onClick} class="absolute"></canvas>
+	<canvas
+		bind:this={cellCanvas}
+		onmousedown={startDrawing}
+		onmousemove={draw}
+		onmouseup={stopDrawing}
+		onmouseleave={stopDrawing}
+		class="absolute"
+	></canvas>
 	<canvas bind:this={gridCanvas} class="pointer-events-none absolute"></canvas>
 </div>
