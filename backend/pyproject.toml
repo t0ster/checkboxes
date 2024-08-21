@@ -22,6 +22,7 @@ bitarray = "^2.9.2"
 cython = "^3.0.11"
 setuptools = "^73.0.1"
 ipython = "^8.26.0"
+ipdb = "^0.13.13"
 
 [build-system]
 requires = ["poetry-core"]
