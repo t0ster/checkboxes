@@ -30,7 +30,7 @@
 	});
 
 	function drawGrid() {
-		gridCtx.strokeStyle = '#52525b'; // zinc-600
+		gridCtx.strokeStyle = '#71717a'; // zinc-500
 		gridCtx.lineWidth = 0.5; // Thin lines for the grid
 
 		for (let x = 0; x <= COLS; x++) {
