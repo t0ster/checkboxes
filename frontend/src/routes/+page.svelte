@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BinaryPacker } from './lib';
+	import { BinaryPacker } from '$lib/binary';
 	import config from '$lib/config-public';
 
 	const SIZE = 10000;
