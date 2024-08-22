@@ -1,7 +1,7 @@
 <script>
 	import '../app.css';
 
-	const commitHash = import.meta.env.CF_PAGES_COMMIT_SHA || 'Development';
+	const commitHash = import.meta.env.VITE_CF_PAGES_COMMIT_SHA || 'Development';
 </script>
 
 <slot></slot>
