@@ -1,7 +1,6 @@
 <script>
 	import '../app.css';
-
-	const commitHash = import.meta.env.VITE_CF_PAGES_COMMIT_SHA || 'Development';
+	import commitHash from '$lib/commit';
 </script>
 
 <slot></slot>
