@@ -81,9 +81,11 @@
 			const lastMessage = updateQueue[updateQueue.length - 1];
 			processMessage(lastMessage);
 			updateQueue = []; // Clear the queue after processing
+		}
 
-			// Schedule next check
-			setTimeout(processQueue, 16); // Limit updates to max ~60 times per second
+		// Request the next animation frame
+		if (isProcessing) {
+			requestAnimationFrame(processQueue);
 		} else {
 			isProcessing = false;
 		}
@@ -102,7 +104,7 @@
 			updateQueue.push(event);
 			if (!isProcessing) {
 				isProcessing = true;
-				setTimeout(processQueue, 0);
+				requestAnimationFrame(processQueue);
 			}
 		};
 
