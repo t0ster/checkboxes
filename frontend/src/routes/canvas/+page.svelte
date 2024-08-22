@@ -7,6 +7,7 @@
 	const ROWS = SIZE / COLS;
 	const CELL_SIZE = 10; // Adjust this value to change the size of each cell
 
+	let socketReady = $state(false);
 	let cellCanvas: HTMLCanvasElement;
 	let gridCanvas: HTMLCanvasElement;
 	let cellCtx: CanvasRenderingContext2D;
@@ -95,8 +96,13 @@
 		socket = new WebSocket(config.PUBLIC_API_WS);
 		socket.binaryType = 'arraybuffer';
 
+		socket.onopen = () => {
+			socketReady = true;
+		};
+
 		socket.onclose = () => {
 			console.log('WebSocket connection closed. Reconnecting...');
+			socketReady = false;
 			setTimeout(connectWebSocket, 1000);
 		};
 
@@ -153,6 +159,11 @@
 </script>
 
 <div class="relative flex h-screen items-center justify-center">
+	{#if !socketReady}
+		<div class="absolute inset-0 z-10 flex items-center justify-center bg-black bg-opacity-50">
+			<div class="text-2xl text-white">Connecting...</div>
+		</div>
+	{/if}
 	<canvas
 		bind:this={cellCanvas}
 		onmousedown={startDrawing}
